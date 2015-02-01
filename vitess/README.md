@@ -1,7 +1,7 @@
 Vitess YCSB Driver
 ==================
 
-# Test using the command line unit test tool.
+# Test using the command line unit test tool
 
   ```sh
   export MAVEN_OPTS=-Xss2m
@@ -22,8 +22,10 @@ Vitess YCSB Driver
 # Executing Workload
 
   ```sh
-  bin/ycsb run vitess -P workloads/workloada -p hosts=localhost:15007 -p keyspace=test_keyspace -p measurementtype=timeseries -p timeseries.granularity=2000
+  # load the initial data. By default this drops and recreates the usertable with 9 fields and keyspace_id
+  bin/ycsb load vitess -P workloads/workloada -p hosts=localhost:15007 -p keyspace=test_keyspace
+  # Run the workload. Specify createTable=skip to avoid dropping and recreating the usertable, else the loaded data will be lost.
+  bin/ycsb run vitess -P workloads/workloada -p hosts=localhost:15007 -p keyspace=test_keyspace -p createTable=skip
   ```
   Use -p debug=true to print the sql statements
-
 

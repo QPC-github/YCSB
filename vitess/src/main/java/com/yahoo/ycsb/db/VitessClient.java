@@ -48,20 +48,23 @@ public class VitessClient extends DB {
 
     String createTable = getProperties().getProperty("createTable", DEFAULT_CREATE_TABLE);
     String dropTable = getProperties().getProperty("dropTable", DEFAULT_DROP_TABLE);
+
     try {
       vtgate = VtGate.connect(hosts, timeoutMs);
-      vtgate.begin();
-      if (debugMode) {
-        System.out.println(dropTable);
+      if (!"skip".equalsIgnoreCase(createTable)) {
+        vtgate.begin();
+        if (debugMode) {
+          System.out.println(dropTable);
+        }
+        vtgate.execute(
+            new QueryBuilder(dropTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
+        if (debugMode) {
+          System.out.println(createTable);
+        }
+        vtgate.execute(
+            new QueryBuilder(createTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
+        vtgate.commit();
       }
-      vtgate.execute(
-          new QueryBuilder(dropTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
-      if (debugMode) {
-        System.out.println(createTable);
-      }
-      vtgate.execute(
-          new QueryBuilder(createTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
-      vtgate.commit();
     } catch (Exception e) {
       throw new DBException(e);
     }
@@ -90,7 +93,9 @@ public class VitessClient extends DB {
       Cursor cursor = vtgate.execute(query);
       for (Row row : cursor) {
         for (Cell cell : row) {
-          result.put(cell.getName(), new ByteArrayByteIterator(row.getBytes(cell.getName())));
+          if (!cell.getName().equals(KeyspaceId.COL_NAME)) {
+            result.put(cell.getName(), new ByteArrayByteIterator(row.getBytes(cell.getName())));
+          }
         }
       }
     } catch (Exception e) {
@@ -226,5 +231,9 @@ public class VitessClient extends DB {
   private UnsignedLong getKeyspaceId(String key) {
     int hashCode = Math.abs(key.hashCode());
     return UnsignedLong.valueOf("" + hashCode);
+  }
+  
+  public static void main(String[] args) {
+    
   }
 }
