@@ -4,9 +4,11 @@ Vitess YCSB Driver
 # Test using the command line unit test tool.
 
   ```sh
+  export MAVEN_OPTS=-Xss2m
   mvn clean package
+  mvn install
   java -cp vitess/target/vitess-binding-0.1.4.jar com.yahoo.ycsb.CommandLine \
-      -db com.yahoo.ycsb.VitessClient \
+      -db com.yahoo.ycsb.db.VitessClient \
       -p hosts=localhost:15007 \
       -p keyspace=test_keyspace \
       -p createTable="create table usertable (pri_key varbinary(50), first varbinary(50), last varbinary(50), keyspace_id varbinary(50) NOT NULL, primary key (pri_key)) Engine=InnoDB" \
@@ -14,6 +16,9 @@ Vitess YCSB Driver
   insert brianfrankcooper first=brian last=cooper
   read brianfrankcooper
   ```
+
+  If the maven statements result in stack overflow errors, use export MAVEN_OPTS=-Xss16m and/or modify YCSB/pom.xml and remove most modules except for vitess, core, and distribution.
+
 # Executing Workload
 
   ```sh
