@@ -4,9 +4,9 @@ Vitess YCSB Driver
 # Test using the command line unit test tool
 
   ```sh
-  export MAVEN_OPTS=-Xss2m
-  mvn clean package
-  mvn install
+  export MAVEN_OPTS=-Xss16m
+  mvn clean package -pl vitess -am
+  mvn install -pl vitess -am
   java -cp vitess/target/vitess-binding-0.1.4.jar com.yahoo.ycsb.CommandLine \
       -db com.yahoo.ycsb.db.VitessClient \
       -p hosts=localhost:15007 \
@@ -16,8 +16,6 @@ Vitess YCSB Driver
   insert brianfrankcooper first=brian last=cooper
   read brianfrankcooper
   ```
-
-  If the maven statements result in stack overflow errors, use export MAVEN_OPTS=-Xss16m and/or modify YCSB/pom.xml and remove most modules except for vitess, core, and distribution.
 
 # Executing Workload
 
