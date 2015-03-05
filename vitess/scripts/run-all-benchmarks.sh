@@ -12,8 +12,9 @@ then
   exit -1
 fi
 
-GKE_ZONE=${GKE_ZONE:-'us-east1-a'}
-BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks}
+GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for executing ycsb-runner
+BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks} # where to save results
+CLUSTERS_CONFIG=${CLUSTERS_CONFIG:-'clusters.json'}
 
 # create and setup instance for running ycsb tasks - reused for all clusters
 gcloud compute instances create ycsb-runner --machine-type n1-standard-1 --zone $GKE_ZONE
@@ -25,12 +26,12 @@ git clone https://github.com/youtube/vitess.git
 # Add external load balancer flag to vtgate
 echo 'createExternalLoadBalancer: true' >> vitess/examples/kubernetes/vtgate-service.yaml
 
-num_scenarios=`python -c 'import json;obj=json.load(open("clusters.json"));print len(obj["clusters"])'`
+num_scenarios=`python -c "import json;obj=json.load(open('$CLUSTERS_CONFIG'));print len(obj['clusters'])"`
 for i in `seq 0 $(($num_scenarios-1))`; do
   # Convert json line format into environment variable line format
   # e.g. {u'TABLETS_PER_SHARD': u'3', u'SHARDS': u'-80,80-'} becomes
   # TABLETS_PER_SHARD=3 SHARDS=-80,80-
-  config=`python -c "import json;obj=json.load(open('clusters.json'));print obj['clusters'][$i]"`
+  config=`python -c "import json;obj=json.load(open('$CLUSTERS_CONFIG'));print obj['clusters'][$i]"`
   config=`echo $config | perl -pe "s/(,)(?=(?:[^']|'[^']*')*$)/;/g"` # Replace non quoted , with ;
   config=`echo $config | perl -pe "s/: /:/g"` # Remove extra whitespace
   config=`echo "${config:1:-1}"`  # Get rid of open/close brackets

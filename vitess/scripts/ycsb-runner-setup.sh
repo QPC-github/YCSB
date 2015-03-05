@@ -12,5 +12,5 @@ export PATH=$JAVA_HOME/bin:$PATH
 git clone https://github.com/youtube/YCSB.git
 export MAVEN_OPTS=-Xss16m
 cd YCSB
-mvn clean package -pl vitess -am
-mvn install -pl vitess -am
+mvn clean package -pl vitess -am -DskipTests
+mvn install -pl vitess -am -DskipTests
