@@ -2,8 +2,9 @@
 
 # This script runs all benchmarks against an existing cluster and grabs log files
 
+BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks}
 GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for executing ycsb-runner
-BENCHMARKS_DIR=${BENCHMARKS_DIR:-`date +"~/ycsb_benchmarks/%Y_%m_%d_%H_%M"`} # where to save results
+BENCHMARKS_DIR=${BENCHMARKS_DIR:-`date +"$BENCHMARKS_BASE_DIR/%Y_%m_%d_%H_%M"`} # where to save results
 
 mkdir -p $BENCHMARKS_DIR
 
