@@ -5,18 +5,22 @@
 BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks}
 GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for executing ycsb-runner
 BENCHMARKS_DIR=${BENCHMARKS_DIR:-`date +"$BENCHMARKS_BASE_DIR/%Y_%m_%d_%H_%M"`} # where to save results
+VTGATE_HOST=${VTGATE_HOST:-''}
 
 mkdir -p $BENCHMARKS_DIR
 
-# get the external vtgate ip from the existing cluster
-vtgate_port=15001
-vtgate_ip=`gcloud compute forwarding-rules list | awk '$1=="vtgate" {print $3}'`
-if [ -z "$vtgate_ip" ]
+if [ -z $VTGATE_HOST ]
 then
-  echo No vtgate forwarding-rule found
-  exit -1
-else
-  export VTGATE_HOST="$vtgate_ip:$vtgate_port"
+  # get the external vtgate ip from the existing cluster
+  vtgate_port=15001
+  vtgate_ip=`gcloud compute forwarding-rules list | awk '$1=="vtgate" {print $3}'`
+  if [ -z "$vtgate_ip" ]
+  then
+    echo No vtgate forwarding-rule found
+    exit -1
+  else
+    VTGATE_HOST="$vtgate_ip:$vtgate_port"
+  fi
 fi
 
 # Create a temporary script which includes the proper vtgate ip and give it
