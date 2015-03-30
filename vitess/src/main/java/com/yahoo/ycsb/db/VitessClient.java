@@ -18,6 +18,8 @@ import com.youtube.vitess.vtgate.Row.Cell;
 import com.youtube.vitess.vtgate.VtGate;
 import com.youtube.vitess.vtgate.cursor.Cursor;
 
+import org.apache.commons.codec.digest.DigestUtils;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -229,11 +231,16 @@ public class VitessClient extends DB {
   }
 
   private UnsignedLong getKeyspaceId(String key) {
-    int hashCode = Math.abs(key.hashCode());
-    return UnsignedLong.valueOf("" + hashCode);
+    return UnsignedLong.asUnsigned(hash(DigestUtils.md5Hex(key)));
   }
-  
-  public static void main(String[] args) {
-    
+
+  // based on String.hashCode() but returns long
+  private static long hash(String string) {
+    long h = 1125899906842597L;
+    int len = string.length();
+    for (int i = 0; i < len; i++) {
+      h = 31 * h + string.charAt(i);
+    }
+    return h;
   }
 }
