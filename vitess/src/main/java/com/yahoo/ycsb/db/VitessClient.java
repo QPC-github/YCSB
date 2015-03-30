@@ -37,7 +37,7 @@ public class VitessClient extends DB {
       "CREATE TABLE usertable(pri_key VARCHAR (255) PRIMARY KEY, "
       + "field0 TEXT, field1 TEXT, field2 TEXT, field3 TEXT, field4 TEXT, "
       + "field5 TEXT, field6 TEXT, field7 TEXT, field8 TEXT, field9 TEXT, "
-      + "keyspace_id BIGINT NOT NULL) Engine=InnoDB";
+      + "keyspace_id BIGINT unsigned NOT NULL) Engine=InnoDB";
   private static final String DEFAULT_DROP_TABLE = "drop table if exists usertable";
 
   @Override
