@@ -32,9 +32,9 @@ public class VitessClient extends DB {
   private String tabletType;
   private boolean debugMode;
 
-  private static final String PRIMARY_KEY_COL = "pri_key";
+  private static final String PRIMARY_KEY_COL = "YCSB_KEY";
   private static final String DEFAULT_CREATE_TABLE =
-      "CREATE TABLE usertable(pri_key VARCHAR (255) PRIMARY KEY, "
+      "CREATE TABLE usertable(YCSB_KEY VARCHAR (255) PRIMARY KEY, "
       + "field0 TEXT, field1 TEXT, field2 TEXT, field3 TEXT, field4 TEXT, "
       + "field5 TEXT, field6 TEXT, field7 TEXT, field8 TEXT, field9 TEXT, "
       + "keyspace_id BIGINT unsigned NOT NULL) Engine=InnoDB";
@@ -84,7 +84,7 @@ public class VitessClient extends DB {
     }
     sql.append(" from ");
     sql.append(table);
-    sql.append(" where pri_key = :pri_key");
+    sql.append(" where YCSB_KEY = :YCSB_KEY");
     if (debugMode) {
       System.out.println(sql);
     }
@@ -141,7 +141,7 @@ public class VitessClient extends DB {
     if (updateCols != null) {
       sql.append(updateCols.toString());
     }
-    sql.append(" where pri_key = ':pri_key'");
+    sql.append(" where YCSB_KEY = ':YCSB_KEY'");
 
     if (debugMode) {
       System.out.println(sql);
@@ -203,7 +203,7 @@ public class VitessClient extends DB {
     StringBuilder sql = new StringBuilder();
     sql.append("delete from ");
     sql.append(table);
-    sql.append(" where pri_key = :pri_key");
+    sql.append(" where YCSB_KEY = :YCSB_KEY");
     if (debugMode) {
       System.out.println(sql);
     }
