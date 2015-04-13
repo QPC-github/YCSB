@@ -15,14 +15,12 @@ fi
 GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for executing ycsb-runner
 BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks} # where to save results
 CLUSTERS_CONFIG=${CLUSTERS_CONFIG:-'clusters.json'}
+YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME:-'ycsb-runner'}
 
 # Bring up a single YCSB runner and reuse it for all cluster configurations
-GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh
+YCSB_RUNNER_NAME=$YCSB_RUNNER_NAME GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh
 
 git clone https://github.com/youtube/vitess.git
-
-# Add external load balancer flag to vtgate
-echo 'createExternalLoadBalancer: true' >> vitess/examples/kubernetes/vtgate-service.yaml
 
 num_scenarios=`python -c "import json;obj=json.load(open('$CLUSTERS_CONFIG'));print len(obj['clusters'])"`
 for i in `seq 0 $(($num_scenarios-1))`; do
@@ -57,4 +55,4 @@ for i in `seq 0 $(($num_scenarios-1))`; do
 done
 
 rm -rf vitess
-GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh
+YCSB_RUNNER_NAME=$YCSB_RUNNER_NAME GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh
