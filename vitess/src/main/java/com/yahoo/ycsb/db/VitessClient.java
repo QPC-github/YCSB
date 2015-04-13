@@ -9,6 +9,7 @@ import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import com.youtube.vitess.vtgate.BindVariable;
 import com.youtube.vitess.vtgate.Exceptions.ConnectionException;
+import com.youtube.vitess.vtgate.Exceptions.IntegrityException;
 import com.youtube.vitess.vtgate.KeyRange;
 import com.youtube.vitess.vtgate.KeyspaceId;
 import com.youtube.vitess.vtgate.Query;
@@ -17,6 +18,8 @@ import com.youtube.vitess.vtgate.Row;
 import com.youtube.vitess.vtgate.Row.Cell;
 import com.youtube.vitess.vtgate.VtGate;
 import com.youtube.vitess.vtgate.cursor.Cursor;
+
+import org.apache.commons.codec.digest.DigestUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,12 +33,12 @@ public class VitessClient extends DB {
   private String tabletType;
   private boolean debugMode;
 
-  private static final String PRIMARY_KEY_COL = "pri_key";
+  private static final String PRIMARY_KEY_COL = "YCSB_KEY";
   private static final String DEFAULT_CREATE_TABLE =
-      "CREATE TABLE usertable(pri_key VARCHAR (255) PRIMARY KEY, "
+      "CREATE TABLE usertable(YCSB_KEY VARCHAR (255) PRIMARY KEY, "
       + "field0 TEXT, field1 TEXT, field2 TEXT, field3 TEXT, field4 TEXT, "
       + "field5 TEXT, field6 TEXT, field7 TEXT, field8 TEXT, field9 TEXT, "
-      + "keyspace_id BIGINT NOT NULL) Engine=InnoDB";
+      + "keyspace_id BIGINT unsigned NOT NULL) Engine=InnoDB";
   private static final String DEFAULT_DROP_TABLE = "drop table if exists usertable";
 
   @Override
@@ -82,7 +85,7 @@ public class VitessClient extends DB {
     }
     sql.append(" from ");
     sql.append(table);
-    sql.append(" where pri_key = :pri_key");
+    sql.append(" where YCSB_KEY = :YCSB_KEY");
     if (debugMode) {
       System.out.println(sql);
     }
@@ -139,7 +142,7 @@ public class VitessClient extends DB {
     if (updateCols != null) {
       sql.append(updateCols.toString());
     }
-    sql.append(" where pri_key = ':pri_key'");
+    sql.append(" where YCSB_KEY = ':YCSB_KEY'");
 
     if (debugMode) {
       System.out.println(sql);
@@ -189,6 +192,9 @@ public class VitessClient extends DB {
       vtgate.begin();
       vtgate.execute(query);
       vtgate.commit();
+    } catch (IntegrityException e) {
+      // Just ignore integrity exceptions and move on
+      e.printStackTrace();
     } catch (Exception e) {
       e.printStackTrace();
       return 1;
@@ -201,7 +207,7 @@ public class VitessClient extends DB {
     StringBuilder sql = new StringBuilder();
     sql.append("delete from ");
     sql.append(table);
-    sql.append(" where pri_key = :pri_key");
+    sql.append(" where YCSB_KEY = :YCSB_KEY");
     if (debugMode) {
       System.out.println(sql);
     }
@@ -229,11 +235,16 @@ public class VitessClient extends DB {
   }
 
   private UnsignedLong getKeyspaceId(String key) {
-    int hashCode = Math.abs(key.hashCode());
-    return UnsignedLong.valueOf("" + hashCode);
+    return UnsignedLong.asUnsigned(hash(DigestUtils.md5Hex(key)));
   }
-  
-  public static void main(String[] args) {
-    
+
+  // based on String.hashCode() but returns long
+  private static long hash(String string) {
+    long h = 1125899906842597L;
+    int len = string.length();
+    for (int i = 0; i < len; i++) {
+      h = 31 * h + string.charAt(i);
+    }
+    return h;
   }
 }
