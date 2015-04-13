@@ -9,6 +9,7 @@ import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import com.youtube.vitess.vtgate.BindVariable;
 import com.youtube.vitess.vtgate.Exceptions.ConnectionException;
+import com.youtube.vitess.vtgate.Exceptions.IntegrityException;
 import com.youtube.vitess.vtgate.KeyRange;
 import com.youtube.vitess.vtgate.KeyspaceId;
 import com.youtube.vitess.vtgate.Query;
@@ -191,6 +192,9 @@ public class VitessClient extends DB {
       vtgate.begin();
       vtgate.execute(query);
       vtgate.commit();
+    } catch (IntegrityException e) {
+      // Just ignore integrity exceptions and move on
+      e.printStackTrace();
     } catch (Exception e) {
       e.printStackTrace();
       return 1;
