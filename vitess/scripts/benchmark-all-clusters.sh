@@ -15,10 +15,14 @@ fi
 GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for executing ycsb-runner
 BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks} # where to save results
 CLUSTERS_CONFIG=${CLUSTERS_CONFIG:-'clusters.json'}
+WORKLOAD_CONFIG=${WORKLOAD_CONFIG:-'workloads.json'}
 YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME:-'ycsb-runner'}
+NUM_YCSB_RUNNERS=${NUM_YCSB_RUNNERS:-1}
 
-# Bring up a single YCSB runner and reuse it for all cluster configurations
-YCSB_RUNNER_NAME=$YCSB_RUNNER_NAME GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh
+# Bring up YCSB runners and reuse them for all cluster configurations
+for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh
+done
 
 git clone https://github.com/youtube/vitess.git
 
@@ -46,7 +50,7 @@ for i in `seq 0 $(($num_scenarios-1))`; do
   eval $params ./cluster-up.sh 2>&1 | tee $benchmarks_dir/cluster-up.txt
   cd ../../..
 
-  BENCHMARKS_DIR=$benchmarks_dir GKE_ZONE=$GKE_ZONE ./run-all-benchmarks.sh
+  WORKLOAD_CONFIG=$WORKLOAD_CONFIG BENCHMARKS_DIR=$benchmarks_dir GKE_ZONE=$GKE_ZONE ./run-all-benchmarks.sh
 
   # Cleanup - tear down the cluster
   cd vitess/examples/kubernetes
@@ -55,4 +59,7 @@ for i in `seq 0 $(($num_scenarios-1))`; do
 done
 
 rm -rf vitess
-YCSB_RUNNER_NAME=$YCSB_RUNNER_NAME GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh
+
+for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh
+done
