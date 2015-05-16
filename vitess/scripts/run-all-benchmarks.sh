@@ -8,6 +8,11 @@ GKE_CLUSTER_NAME=${GKE_CLUSTER_NAME:-'example'}
 BENCHMARKS_DIR=${BENCHMARKS_DIR:-`date +"$BENCHMARKS_BASE_DIR/%Y_%m_%d_%H_%M"`} # where to save results
 VTGATE_HOST=${VTGATE_HOST:-''}
 YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME:-'ycsb-runner'}
+NUM_YCSB_RUNNERS=${NUM_YCSB_RUNNERS:-1}
+WORKLOAD_CONFIG=${WORKLOAD_CONFIG:-'workloads.json'}
+
+# Get region from zone (everything to last dash)
+gke_region=`echo $GKE_ZONE | sed "s/-[^-]*$//"`
 
 mkdir -p $BENCHMARKS_DIR
 
@@ -15,7 +20,8 @@ if [ -z $VTGATE_HOST ]
 then
   # get the external vtgate ip from the existing cluster
   vtgate_port=15001
-  vtgate_ip=`gcloud compute forwarding-rules list | grep $GKE_CLUSTER_NAME | grep vtgate | awk '{print $3}'`
+  vtgate_pool=`vitess/examples/kubernetes/util/get_forwarded_pool.sh $GKE_CLUSTER_NAME $gke_region $vtgate_port`
+  vtgate_ip=`gcloud compute forwarding-rules list | grep $vtgate_pool | awk '{print $3}'`
   if [ -z "$vtgate_ip" ]
   then
     echo No vtgate forwarding-rule found
@@ -25,20 +31,32 @@ then
   fi
 fi
 
-gcloud compute ssh $YCSB_RUNNER_NAME --zone $GKE_ZONE --command 'mkdir ~/workloadlogs'
+for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+  gcloud compute ssh ${YCSB_RUNNER_NAME}$i --zone $GKE_ZONE --command 'mkdir ~/workloadlogs'
+done
 
 # Create a temporary script which includes the proper vtgate ip and give it
 # to the ycsb-runner instance to execute
-python workload-runner-generator.py $VTGATE_HOST
-gcloud compute ssh $YCSB_RUNNER_NAME --zone $GKE_ZONE --command 'bash -s' < workload-runner.sh
+python workload-runner-generator.py $VTGATE_HOST $WORKLOAD_CONFIG
+while read cmd; do
+  for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+    gcloud compute ssh ${YCSB_RUNNER_NAME}$i --zone $GKE_ZONE --command "$cmd" < /dev/null &
+  done
+  wait
+done < workload-runner.sh
 
 # Save off data - benchmark results + gcloud information
-gcloud compute copy-files $YCSB_RUNNER_NAME:workloadlogs $BENCHMARKS_DIR --zone $GKE_ZONE
+for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+  mkdir $BENCHMARKS_DIR/runner-$i
+  gcloud compute copy-files ${YCSB_RUNNER_NAME}$i:workloadlogs $BENCHMARKS_DIR/runner-$i --zone $GKE_ZONE
+done
 gcloud alpha container kubectl get pods > $BENCHMARKS_DIR/gcloud-pods.txt
 gcloud compute instances list > $BENCHMARKS_DIR/gcloud-instances.txt
 
 # Cleanup - tear down log directories, temporary scripts, etc.
-gcloud compute ssh $YCSB_RUNNER_NAME --zone $GKE_ZONE --command 'rm -rf ~/workloadlogs'
+for i in `seq 1 $NUM_YCSB_RUNNERS`; do
+  gcloud compute ssh ${YCSB_RUNNER_NAME}$i --zone $GKE_ZONE --command 'rm -rf ~/workloadlogs'
+done
 
 cp workload-runner.sh $BENCHMARKS_DIR/workload-runner.sh
 rm workload-runner.sh

@@ -18,12 +18,13 @@ function print_metrics () {
     metrics=$metrics,$metric_str
   done
   metrics=`echo $metrics | cut -c2-`
-  echo $metrics
+  echo -n $metrics
 }
 
 function print_cluster_metrics () {
   cluster_results_dir=$1
-  workload_logs_dir="$cluster_results_dir/workloadlogs"
+  num_runners=`ls -d $cluster_results_dir/*/ | wc -l`
+  workload_logs_dir="$cluster_results_dir/runner-1/workloadlogs"
 
   timestamp=`basename $cluster_results_dir`
   num_shards=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Shards/ {print $3}' | tr ',' ' ' | wc -w`
@@ -32,23 +33,26 @@ function print_cluster_metrics () {
   ssd_size=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^SSD/ {print $4;exit;}'`
   num_vtgates=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^VTGate/ {print $4}'`
   num_nodes=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Num/ {print $4;exit;}'`
-  num_logs=`ls $workload_logs_dir | wc -l`
 
-  for logfile in $workload_logs_dir/*; do
-    command_line=`cat $logfile | awk 'NR==2'`
-    num_threads=`echo $command_line | awk '/-threads/ { for (x=1;x<=NF;x++) if ($x~"-threads") print $(x+1) }'`
-    if [ $num_threads -eq 1 ]; then continue; fi
-    workload=`echo $command_line | awk '/YCSB/ { for (x=1;x<=NF;x++) if ($x~"YCSB") print $(x) }' | awk -F'/' '{print $3}'`
-    for phase in INSERT UPDATE READ-MODIFY-WRITE READ SCAN; do
-      has_metric=`cat $logfile | awk '$1=="['"$phase"']," && $2~/^Operations/ {print $3}'`
-      if [ -z $has_metric ]; then
-        continue
-      else
-        echo -n $timestamp,$num_shards,$tablets_per_shard,$machine_type,$ssd_size,$num_vtgates,$num_nodes,$workload,
-        print_overall_metrics $logfile
-        echo -n $num_threads,$phase,
-        print_metrics $logfile $phase
-      fi
+  for runner in `ls -d $cluster_results_dir/*/`; do
+    workload_logs_dir="$runner/workloadlogs"
+    for logfile in $workload_logs_dir/*; do
+      command_line=`cat $logfile | awk 'NR==2'`
+      num_threads=`echo $command_line | awk '/-threads/ { for (x=1;x<=NF;x++) if ($x~"-threads") print $(x+1) }'`
+      if [ $num_threads -eq 1 ]; then continue; fi
+      workload=`echo $command_line | awk '/YCSB/ { for (x=1;x<=NF;x++) if ($x~"YCSB") print $(x) }' | awk -F'/' '{print $3}'`
+      for phase in INSERT UPDATE READ-MODIFY-WRITE READ SCAN; do
+        has_metric=`cat $logfile | awk '$1=="['"$phase"']," && $2~/^Operations/ {print $3}'`
+        if [ -z $has_metric ]; then
+          continue
+        else
+          echo -n $timestamp,$num_shards,$tablets_per_shard,$machine_type,$ssd_size,$num_vtgates,$num_nodes,$workload,
+          print_overall_metrics $logfile
+          echo -n $num_threads,$phase,
+          print_metrics $logfile $phase
+	  echo ",`basename $runner`"
+        fi
+      done
     done
   done
 }
