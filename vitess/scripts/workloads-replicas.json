@@ -1,0 +1,6 @@
+{
+        "workloads": [
+		{"action": "load", "workload": "a", "recordcount": "1", "threads": "1", "createtable" : "True"},
+                {"action": "load", "workload": "a", "recordcount": "1000", "threads": "300", "wait": "30"}
+        ]
+}
