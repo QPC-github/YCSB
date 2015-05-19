@@ -1,0 +1,9 @@
+{
+        "clusters": [
+                {"VTGATE_COUNT": "1",  "GKE_SSD_SIZE_GB": "100", "GKE_MACHINE_TYPE": "n1-standard-16", "GKE_ZONE": "us-east1-a", "SHARDS": "0", "TABLETS_PER_SHARD": "2"},
+                {"VTGATE_COUNT": "2",  "GKE_SSD_SIZE_GB": "100", "GKE_MACHINE_TYPE": "n1-standard-16", "GKE_ZONE": "us-east1-a", "SHARDS": "-80,80-", "TABLETS_PER_SHARD": "2"},
+                {"VTGATE_COUNT": "4",  "GKE_SSD_SIZE_GB": "100", "GKE_MACHINE_TYPE": "n1-standard-16", "GKE_ZONE": "us-east1-a", "SHARDS": "-40,40-80,80-c0,c0-", "TABLETS_PER_SHARD": "2"},
+                {"VTGATE_COUNT": "8",  "GKE_SSD_SIZE_GB": "100", "GKE_MACHINE_TYPE": "n1-standard-16", "GKE_ZONE": "us-east1-a", "SHARDS": "-20,20-40,40-60,60-80,80-a0,a0-c0,c0-e0,e0-", "TABLETS_PER_SHARD": "2"}
+        ]
+}
+
