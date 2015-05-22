@@ -1,6 +1,4 @@
 /**
- * Copyright (c) 2010 Yahoo! Inc. All rights reserved.
- *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
  * may obtain a copy of the License at
@@ -18,63 +16,106 @@
 package com.yahoo.ycsb.db;
 
 
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.ByteIterator;
+import com.google.common.base.Preconditions;
+
 import com.yahoo.ycsb.ByteArrayByteIterator;
-import com.yahoo.ycsb.StringByteIterator;
-
-import java.io.IOException;
-import java.util.*;
-//import java.util.HashMap;
-//import java.util.Properties;
-//import java.util.Set;
-//import java.util.Vector;
-
+import com.yahoo.ycsb.ByteIterator;
+import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.measurements.Measurements;
+
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.HTable;
-//import org.apache.hadoop.hbase.client.Scanner;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.BufferedMutator;
+import org.apache.hadoop.hbase.client.BufferedMutatorParams;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
-//import org.apache.hadoop.hbase.io.Cell;
-//import org.apache.hadoop.hbase.io.RowResult;
+import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.HBaseConfiguration;
+
+import java.io.IOException;
+import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Random;
+import java.util.Set;
+import java.util.Vector;
 
 /**
- * HBase client for YCSB framework
+ * HBase 1.0 client for YCSB framework.
+ *
+ * A modified version of HBaseClient (which targets HBase v0.9) utilizing the
+ * HBase 1.0.0 API.
+ *
+ * This client also adds toggleable client-side buffering and configurable write durability.
  */
-public class HBaseClient extends com.yahoo.ycsb.DB
+public class HBaseClient10 extends com.yahoo.ycsb.DB
 {
-    // BFC: Change to fix broken build (with HBase 0.20.6)
-    //private static final Configuration config = HBaseConfiguration.create();
-    private static final Configuration config = HBaseConfiguration.create(); //new HBaseConfiguration();
+    private static final Configuration config = HBaseConfiguration.create();
 
     public boolean _debug=false;
 
-    public String _table="";
-    public HTable _hTable=null;
+    public String _tableName="";
+    public Connection _connection=null;
+
+    // Depending on the value of _clientBuffering, either _bufferedMutator
+    // (_clientBuffering) or _hTable (!_clientBuffering) will be used.
+    public Table _table=null;
+    public BufferedMutator _bufferedMutator=null;
+
     public String _columnFamily="";
     public byte _columnFamilyBytes[];
+
+    /**
+     * Durability to use for puts and deletes.
+     */
+    public Durability _durability = Durability.USE_DEFAULT;
+
+    /**
+     * If true, buffer mutations on the client.
+     * This is the default behavior for HBaseClient. For measuring
+     * insert/update/delete latencies, client side buffering should be disabled.
+     */
+    public boolean _clientSideBuffering = true;
 
     public static final int Ok=0;
     public static final int ServerError=-1;
     public static final int HttpError=-2;
     public static final int NoMatchingRecord=-3;
 
-    public static final Object tableLock = new Object();
-
     /**
      * Initialize any state for this DB.
      * Called once per DB instance; there is one DB instance per client thread.
      */
+    @Override
     public void init() throws DBException
     {
+        if ("false".equals(getProperties().getProperty("clientbuffering", "true"))) {
+            this._clientSideBuffering = false;
+        }
+
+        if (getProperties().getProperty("durability") != null) {
+            this._durability = Durability.valueOf(getProperties().getProperty("durability"));
+        }
+
+        try {
+            _connection = ConnectionFactory.createConnection(config);
+        } catch (java.io.IOException e) {
+            throw new DBException(e);
+        }
+
         if ( (getProperties().getProperty("debug")!=null) &&
                 (getProperties().getProperty("debug").compareTo("true")==0) )
         {
@@ -87,26 +128,32 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             System.err.println("Error, must specify a columnfamily for HBase table");
             throw new DBException("No columnfamily specified");
         }
-      _columnFamilyBytes = Bytes.toBytes(_columnFamily);
-
+        _columnFamilyBytes = Bytes.toBytes(_columnFamily);
     }
 
     /**
      * Cleanup any state for this DB.
      * Called once per DB instance; there is one DB instance per client thread.
      */
+    @Override
     public void cleanup() throws DBException
     {
         // Get the measurements instance as this is the only client that should
-        // count clean up time like an update since autoflush is off.
+        // count clean up time like an update if client-side buffering is
+        // enabled.
         Measurements _measurements = Measurements.getMeasurements();
         try {
             long st=System.nanoTime();
-            if (_hTable != null) {
-                _hTable.flushCommits();
+            if (_bufferedMutator != null) {
+                _bufferedMutator.close();
+            }
+            if (_table != null) {
+                _table.close();
             }
             long en=System.nanoTime();
-            _measurements.measure("UPDATE", (int)((en-st)/1000));
+            final String type = _clientSideBuffering ? "UPDATE" : "CLEANUP";
+            _measurements.measure(type, (int)((en-st)/1000));
+            _connection.close();
         } catch (IOException e) {
             throw new DBException(e);
         }
@@ -114,14 +161,14 @@ public class HBaseClient extends com.yahoo.ycsb.DB
 
     public void getHTable(String table) throws IOException
     {
-        synchronized (tableLock) {
-            _hTable = new HTable(config, table);
-            //2 suggestions from http://ryantwopointoh.blogspot.com/2009/01/performance-of-hbase-importing.html
-            _hTable.setAutoFlush(false, true);
-            _hTable.setWriteBufferSize(1024*1024*12);
-            //return hTable;
+        final TableName tableName = TableName.valueOf(table);
+        this._table = this._connection.getTable(tableName);
+        //suggestions from http://ryantwopointoh.blogspot.com/2009/01/performance-of-hbase-importing.html
+        if (_clientSideBuffering) {
+            final BufferedMutatorParams p = new BufferedMutatorParams(tableName);
+            p.writeBufferSize(1024*1024*12);
+            this._bufferedMutator = this._connection.getBufferedMutator(p);
         }
-
     }
 
     /**
@@ -136,16 +183,16 @@ public class HBaseClient extends com.yahoo.ycsb.DB
     public int read(String table, String key, Set<String> fields, HashMap<String,ByteIterator> result)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
-        if (!_table.equals(table)) {
-            _hTable = null;
+        if (!_tableName.equals(table)) {
+            _table = null;
             try
             {
                 getHTable(table);
-                _table = table;
+                _tableName = table;
             }
             catch (IOException e)
             {
-                System.err.println("Error accessing HBase table: "+e);
+                System.err.println("Error accessing HBase table: " + e);
                 return ServerError;
             }
         }
@@ -153,23 +200,25 @@ public class HBaseClient extends com.yahoo.ycsb.DB
         Result r = null;
         try
         {
-        if (_debug) {
-        System.out.println("Doing read from HBase columnfamily "+_columnFamily);
-        System.out.println("Doing read for key: "+key);
-        }
-            Get g = new Get(Bytes.toBytes(key));
-          if (fields == null) {
-            g.addFamily(_columnFamilyBytes);
-          } else {
-            for (String field : fields) {
-              g.addColumn(_columnFamilyBytes, Bytes.toBytes(field));
+            if (_debug) {
+                System.out.println("Doing read from HBase columnfamily "+_columnFamily);
+                System.out.println("Doing read for key: "+key);
             }
-          }
-            r = _hTable.get(g);
+            Get g = new Get(Bytes.toBytes(key));
+            if (fields == null) {
+                g.addFamily(_columnFamilyBytes);
+            } else {
+                for (String field : fields) {
+                    g.addColumn(_columnFamilyBytes, Bytes.toBytes(field));
+                }
+            }
+            r = _table.get(g);
         }
         catch (IOException e)
         {
-            System.err.println("Error doing get: "+e);
+            if (_debug) {
+                System.err.println("Error doing get: "+e);
+            }
             return ServerError;
         }
         catch (ConcurrentModificationException e)
@@ -178,17 +227,18 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             return ServerError;
         }
 
-  for (KeyValue kv : r.raw()) {
-    result.put(
-        Bytes.toString(kv.getQualifier()),
-        new ByteArrayByteIterator(kv.getValue()));
-    if (_debug) {
-      System.out.println("Result for field: "+Bytes.toString(kv.getQualifier())+
-          " is: "+Bytes.toString(kv.getValue()));
-    }
-
-  }
-    return Ok;
+        if (r.isEmpty()) {
+            return NoMatchingRecord;
+        }
+        for (Cell c : r.listCells()) {
+            result.put(Bytes.toString(CellUtil.cloneQualifier(c)),
+                    new ByteArrayByteIterator(CellUtil.cloneValue(c)));
+            if (_debug) {
+                System.out.println("Result for field: "+Bytes.toString(CellUtil.cloneQualifier(c))+
+                        " is: "+Bytes.toString(CellUtil.cloneValue(c)));
+            }
+        }
+        return Ok;
     }
 
     /**
@@ -201,15 +251,16 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public int scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
-        if (!_table.equals(table)) {
-            _hTable = null;
+        if (!_tableName.equals(table)) {
+            _table = null;
             try
             {
                 getHTable(table);
-                _table = table;
+                _tableName = table;
             }
             catch (IOException e)
             {
@@ -239,7 +290,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
         //get results
         ResultScanner scanner = null;
         try {
-            scanner = _hTable.getScanner(s);
+            scanner = _table.getScanner(s);
             int numResults = 0;
             for (Result rr = scanner.next(); rr != null; rr = scanner.next())
             {
@@ -253,9 +304,9 @@ public class HBaseClient extends com.yahoo.ycsb.DB
                 HashMap<String,ByteIterator> rowResult = new HashMap<String, ByteIterator>();
 
                 for (KeyValue kv : rr.raw()) {
-                  rowResult.put(
-                      Bytes.toString(kv.getQualifier()),
-                      new ByteArrayByteIterator(kv.getValue()));
+                    rowResult.put(
+                            Bytes.toString(kv.getQualifier()),
+                            new ByteArrayByteIterator(kv.getValue()));
                 }
                 //add rowResult to result vector
                 result.add(rowResult);
@@ -277,7 +328,10 @@ public class HBaseClient extends com.yahoo.ycsb.DB
         }
 
         finally {
-            scanner.close();
+            if (scanner != null)
+            {
+                scanner.close();
+            }
         }
 
         return Ok;
@@ -292,15 +346,16 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param values A HashMap of field/value pairs to update in the record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public int update(String table, String key, HashMap<String,ByteIterator> values)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
-        if (!_table.equals(table)) {
-            _hTable = null;
+        if (!_tableName.equals(table)) {
+            _table = null;
             try
             {
                 getHTable(table);
-                _table = table;
+                _tableName = table;
             }
             catch (IOException e)
             {
@@ -314,19 +369,25 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             System.out.println("Setting up put for key: "+key);
         }
         Put p = new Put(Bytes.toBytes(key));
+        p.setDurability(_durability);
         for (Map.Entry<String, ByteIterator> entry : values.entrySet())
         {
             byte[] value = entry.getValue().toArray();
             if (_debug) {
                 System.out.println("Adding field/value " + entry.getKey() + "/"+
-                  Bytes.toStringBinary(value) + " to put request");
+                        Bytes.toStringBinary(value) + " to put request");
             }
             p.add(_columnFamilyBytes,Bytes.toBytes(entry.getKey()), value);
         }
 
         try
         {
-            _hTable.put(p);
+            if (_clientSideBuffering) {
+                Preconditions.checkNotNull(_bufferedMutator);
+                _bufferedMutator.mutate(p);
+            } else{
+                _table.put(p);
+            }
         }
         catch (IOException e)
         {
@@ -353,6 +414,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param values A HashMap of field/value pairs to insert in the record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public int insert(String table, String key, HashMap<String,ByteIterator> values)
     {
         return update(table,key,values);
@@ -365,15 +427,16 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param key The record key of the record to delete.
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public int delete(String table, String key)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
-        if (!_table.equals(table)) {
-            _hTable = null;
+        if (!_tableName.equals(table)) {
+            _table = null;
             try
             {
                 getHTable(table);
-                _table = table;
+                _tableName = table;
             }
             catch (IOException e)
             {
@@ -386,10 +449,16 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             System.out.println("Doing delete for key: "+key);
         }
 
-        Delete d = new Delete(Bytes.toBytes(key));
+        final Delete d = new Delete(Bytes.toBytes(key));
+        d.setDurability(_durability);
         try
         {
-            _hTable.delete(d);
+            if (_clientSideBuffering) {
+                Preconditions.checkNotNull(_bufferedMutator);
+                _bufferedMutator.mutate(d);
+            } else {
+                _table.delete(d);
+            }
         }
         catch (IOException e)
         {
@@ -401,128 +470,11 @@ public class HBaseClient extends com.yahoo.ycsb.DB
 
         return Ok;
     }
-
-    public static void main(String[] args)
-    {
-        if (args.length!=3)
-        {
-            System.out.println("Please specify a threadcount, columnfamily and operation count");
-            System.exit(0);
-        }
-
-        final int keyspace=10000; //120000000;
-
-        final int threadcount=Integer.parseInt(args[0]);
-
-        final String columnfamily=args[1];
-
-
-        final int opcount=Integer.parseInt(args[2])/threadcount;
-
-        Vector<Thread> allthreads=new Vector<Thread>();
-
-        for (int i=0; i<threadcount; i++)
-        {
-            Thread t=new Thread()
-            {
-                public void run()
-                {
-                    try
-                    {
-                        Random random=new Random();
-
-                        HBaseClient cli=new HBaseClient();
-
-                        Properties props=new Properties();
-                        props.setProperty("columnfamily",columnfamily);
-                        props.setProperty("debug","true");
-                        cli.setProperties(props);
-
-                        cli.init();
-
-                        //HashMap<String,String> result=new HashMap<String,String>();
-
-                        long accum=0;
-
-                        for (int i=0; i<opcount; i++)
-                        {
-                            int keynum=random.nextInt(keyspace);
-                            String key="user"+keynum;
-                            long st=System.currentTimeMillis();
-                            int rescode;
-                            /*
-                            HashMap hm = new HashMap();
-                            hm.put("field1","value1");
-                            hm.put("field2","value2");
-                            hm.put("field3","value3");
-                            rescode=cli.insert("table1",key,hm);
-                            HashSet<String> s = new HashSet();
-                            s.add("field1");
-                            s.add("field2");
-
-                            rescode=cli.read("table1", key, s, result);
-                            //rescode=cli.delete("table1",key);
-                            rescode=cli.read("table1", key, s, result);
-                            */
-                            HashSet<String> scanFields = new HashSet<String>();
-                            scanFields.add("field1");
-                            scanFields.add("field3");
-                            Vector<HashMap<String,ByteIterator>> scanResults = new Vector<HashMap<String,ByteIterator>>();
-                            rescode = cli.scan("table1","user2",20,null,scanResults);
-
-                            long en=System.currentTimeMillis();
-
-                            accum+=(en-st);
-
-                            if (rescode!=Ok)
-                            {
-                                System.out.println("Error "+rescode+" for "+key);
-                            }
-
-                            if (i%1==0)
-                            {
-                                System.out.println(i+" operations, average latency: "+(((double)accum)/((double)i)));
-                            }
-                        }
-
-                        //System.out.println("Average latency: "+(((double)accum)/((double)opcount)));
-                        //System.out.println("Average get latency: "+(((double)cli.TotalGetTime)/((double)cli.TotalGetOps)));
-                    }
-                    catch (Exception e)
-                    {
-                        e.printStackTrace();
-                    }
-                }
-            };
-            allthreads.add(t);
-        }
-
-        long st=System.currentTimeMillis();
-        for (Thread t: allthreads)
-        {
-            t.start();
-        }
-
-        for (Thread t: allthreads)
-        {
-            try
-            {
-                t.join();
-            }
-            catch (InterruptedException e)
-            {
-            }
-        }
-        long en=System.currentTimeMillis();
-
-        System.out.println("Throughput: "+((1000.0)*(((double)(opcount*threadcount))/((double)(en-st))))+" ops/sec");
-
-    }
 }
 
 /* For customized vim control
  * set autoindent
  * set si
  * set shiftwidth=4
-*/
+ */
 
