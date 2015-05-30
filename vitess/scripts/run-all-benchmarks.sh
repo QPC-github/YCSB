@@ -37,12 +37,19 @@ done
 
 # Create a temporary script which includes the proper vtgate ip and give it
 # to the ycsb-runner instance to execute
-python workload-runner-generator.py $VTGATE_HOST $WORKLOAD_CONFIG
+python workload-runner-generator.py $VTGATE_HOST $NUM_YCSB_RUNNERS $WORKLOAD_CONFIG
+paste -d"\n" workload-runner*.sh | sed /^$/d > workload-runner.sh
+cnt=0
 while read cmd; do
-  for i in `seq 1 $NUM_YCSB_RUNNERS`; do
-    gcloud compute ssh ${YCSB_RUNNER_NAME}$i --zone $GKE_ZONE --command "$cmd" < /dev/null &
-  done
-  wait
+  if ! [ "`echo $cmd | grep 'CREATE TABLE'`" ] || [ "$(($cnt % $NUM_YCSB_RUNNERS))" -eq 0 ]; then
+    ycsb_runner=${YCSB_RUNNER_NAME}$(($(($cnt  % $NUM_YCSB_RUNNERS)) + 1))
+    echo running on $ycsb_runner
+    gcloud compute ssh $ycsb_runner --zone $GKE_ZONE --command "$cmd" < /dev/null &
+  fi
+  if [ "$(($(($cnt + 1)) % $NUM_YCSB_RUNNERS))" -eq 0 ]; then
+    wait
+  fi
+  let cnt=cnt+1
 done < workload-runner.sh
 
 # Save off data - benchmark results + gcloud information
@@ -50,7 +57,7 @@ for i in `seq 1 $NUM_YCSB_RUNNERS`; do
   mkdir $BENCHMARKS_DIR/runner-$i
   gcloud compute copy-files ${YCSB_RUNNER_NAME}$i:workloadlogs $BENCHMARKS_DIR/runner-$i --zone $GKE_ZONE
 done
-gcloud alpha container kubectl get pods > $BENCHMARKS_DIR/gcloud-pods.txt
+kubectl get pods > $BENCHMARKS_DIR/gcloud-pods.txt
 gcloud compute instances list > $BENCHMARKS_DIR/gcloud-instances.txt
 
 # Cleanup - tear down log directories, temporary scripts, etc.
@@ -58,5 +65,5 @@ for i in `seq 1 $NUM_YCSB_RUNNERS`; do
   gcloud compute ssh ${YCSB_RUNNER_NAME}$i --zone $GKE_ZONE --command 'rm -rf ~/workloadlogs'
 done
 
-cp workload-runner.sh $BENCHMARKS_DIR/workload-runner.sh
-rm workload-runner.sh
+cp workload-runner*.sh $BENCHMARKS_DIR
+rm workload-runner*.sh

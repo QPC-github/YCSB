@@ -1,6 +1,7 @@
 #!/bin/bash
 
 base_dir=$1
+print_header=$2
 
 function print_overall_metrics() {
   logfile=$1
@@ -24,7 +25,6 @@ function print_metrics () {
 function print_cluster_metrics () {
   cluster_results_dir=$1
   num_runners=`ls -d $cluster_results_dir/*/ | wc -l`
-  workload_logs_dir="$cluster_results_dir/runner-1/workloadlogs"
 
   timestamp=`basename $cluster_results_dir`
   num_shards=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Shards/ {print $3}' | tr ',' ' ' | wc -w`
@@ -35,6 +35,7 @@ function print_cluster_metrics () {
   num_nodes=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Num/ {print $4;exit;}'`
 
   for runner in `ls -d $cluster_results_dir/*/`; do
+    index=0
     workload_logs_dir="$runner/workloadlogs"
     for logfile in $workload_logs_dir/*; do
       command_line=`cat $logfile | awk 'NR==2'`
@@ -46,16 +47,21 @@ function print_cluster_metrics () {
         if [ -z $has_metric ]; then
           continue
         else
-          echo -n $timestamp,$num_shards,$tablets_per_shard,$machine_type,$ssd_size,$num_vtgates,$num_nodes,$workload,
+          echo -n $index,$timestamp,$num_shards,$tablets_per_shard,$machine_type,$ssd_size,$num_vtgates,$num_nodes,$workload,
           print_overall_metrics $logfile
           echo -n $num_threads,$phase,
           print_metrics $logfile $phase
 	  echo ",`basename $runner`"
+	  let index=index+1
         fi
       done
     done
   done
 }
+
+if [ -n "$print_header" ] && "$print_header"; then
+  echo Index,Timestamp,Shards,Tablets_per_shard,Machine_type,SSD_size,VtGate_count,GCE_node_count,Workload,RunTime_ms,Thoughput_ops_per_sec,Threads,Phase,Operations,Average_Latency_us,Min_Latency_us,Max_Latency_us,P95_Latency_ms,P99_Latency_ms,YCSB_Runner_Name
+fi
 
 for i in $base_dir/*; do
   if [ -d "$i" ]; then
