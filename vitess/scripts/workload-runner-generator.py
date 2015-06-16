@@ -4,7 +4,7 @@ import sys
 def main(unused_argv):
   vtgate_host = sys.argv[1]
   ycsb_count = int(sys.argv[2])
-  workload_file = sys.argv[3] if len(sys.argv) > 2 else 'workloads.json'
+  workload_file = sys.argv[3] if len(sys.argv) > 3 else 'workloads.json'
   with open(workload_file) as data_file:
     data = json.load(data_file)
 
@@ -13,12 +13,12 @@ def main(unused_argv):
       for index, workload in enumerate(data["workloads"]):
         action = workload["action"]
         create_table = "'CREATE TABLE usertable (YCSB_KEY VARCHAR (255) PRIMARY KEY, field0 TEXT, field1 TEXT, keyspace_id BIGINT unsigned NOT NULL)'"
-        cmd = 'YCSB/bin/ycsb %s vitess -P YCSB/workloads/workload%s -p hosts=%s -p keyspace=test_keyspace -p insertorder=ordered -p fieldcount=2 -p recordcount=%s -threads %s -s' % (
-          action, workload["workload"], vtgate_host, workload['recordcount'], workload["threads"])
+        cmd = 'YCSB/bin/ycsb %s vitess -P YCSB/workloads/workload%s -p hosts=%s -p keyspace=test_keyspace -p insertorder=ordered -p fieldcount=2 -threads %s -s' % (
+          action, workload["workload"], vtgate_host, workload["threads"])
         if action == 'run':
           cmd += ' -p operationcount=%s' % workload['operationcount']
         else:
-          cmd += ' -p insertcount=%s -p insertstart=%d' % (workload['recordcount'], i * int(workload['recordcount']))
+          cmd += ' -p recordcount=%s -p insertcount=%s -p insertstart=%d' % (workload['recordcount'], workload['recordcount'], i * int(workload['recordcount']))
         cmd += ' -p tabletType=%s' % workload.get('tabletType', 'master')
         if not (workload.has_key('createtable') and workload['createtable'] == 'True'):
           cmd += ' -p createTable=skip'

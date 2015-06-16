@@ -1,7 +1,7 @@
 {
 	"workloads": [
 		{"action": "load", "workload": "a", "recordcount": "1", "threads": "1", "createtable" : "True"},
-		{"action": "load", "workload": "a", "recordcount": "12000000", "threads": "50", "wait": "60"},
+		{"action": "load", "workload": "a", "recordcount": "12000000", "threads": "50", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "25", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "25", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "50", "maxexecutiontime": "120"},
@@ -19,12 +19,6 @@
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "300", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "300", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "400", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "400", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "500", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "500", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "600", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "600", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "700", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "700", "maxexecutiontime": "120"}
+		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "400", "maxexecutiontime": "120"}
 	]
 }
