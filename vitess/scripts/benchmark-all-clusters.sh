@@ -21,8 +21,9 @@ NUM_YCSB_RUNNERS=${NUM_YCSB_RUNNERS:-1}
 
 # Bring up YCSB runners and reuse them for all cluster configurations
 for i in `seq 1 $NUM_YCSB_RUNNERS`; do
-  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh
+  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-up.sh &
 done
+wait
 
 git clone https://github.com/youtube/vitess.git
 
@@ -50,7 +51,7 @@ for i in `seq 0 $(($num_scenarios-1))`; do
   eval $params ./cluster-up.sh 2>&1 | tee $benchmarks_dir/cluster-up.txt
   cd ../../..
 
-  WORKLOAD_CONFIG=$WORKLOAD_CONFIG BENCHMARKS_DIR=$benchmarks_dir GKE_ZONE=$GKE_ZONE ./run-all-benchmarks.sh
+  WORKLOAD_CONFIG=$WORKLOAD_CONFIG BENCHMARKS_DIR=$benchmarks_dir GKE_ZONE=$GKE_ZONE NUM_YCSB_RUNNERS=$NUM_YCSB_RUNNERS ./run-all-benchmarks.sh
 
   # Cleanup - tear down the cluster
   cd vitess/examples/kubernetes
@@ -61,5 +62,6 @@ done
 rm -rf vitess
 
 for i in `seq 1 $NUM_YCSB_RUNNERS`; do
-  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh
+  YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME}$i GKE_ZONE=$GKE_ZONE ./ycsb-runner-down.sh &
 done
+wait
