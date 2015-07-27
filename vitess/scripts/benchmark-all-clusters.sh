@@ -84,7 +84,7 @@ for i in `seq 0 $(($num_scenarios-1))`; do
 
   # Cleanup - tear down the cluster
   cd vitess/examples/kubernetes
-  eval $params GKE_ZONE=$GKE_ZONE ./vitess-down.sh
+  eval $params GKE_ZONE=$GKE_ZONE ./vitess-down.sh 2>&1 | tee $benchmarks_dir/vitess-down.txt
   cd ../../..
 done
 
