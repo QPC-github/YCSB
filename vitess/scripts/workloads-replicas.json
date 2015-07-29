@@ -15,6 +15,10 @@
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "200", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "200", "maxexecutiontime": "120"},
 		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "250", "maxexecutiontime": "120"},
-		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "250", "maxexecutiontime": "120"}
+		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "250", "maxexecutiontime": "120"},
+		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "300", "maxexecutiontime": "120"},
+		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "300", "maxexecutiontime": "120"},
+		{"action": "run", "workload": "b", "operationcount": "12000000", "tabletType": "replica", "threads": "400", "maxexecutiontime": "120"},
+		{"action": "run", "workload": "c", "operationcount": "12000000", "tabletType": "replica", "threads": "400", "maxexecutiontime": "120"}
 	]
 }
