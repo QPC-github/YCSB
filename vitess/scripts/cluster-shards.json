@@ -1,6 +1,6 @@
 {
 	"gke_cluster": {"GKE_SSD_SIZE_GB": "100", "GKE_MACHINE_TYPE": "n1-standard-8", "GKE_NUM_NODES": "80"},
-        "clusters": [
+        "scenarios": [
 		{"cluster": {"VTGATE_COUNT": "1", "TABLETS_PER_SHARD": "1", "SHARDS": "0"}, "NUM_YCSB_RUNNERS": "1"},
 		{"cluster": {"VTGATE_COUNT": "1", "TABLETS_PER_SHARD": "1", "SHARDS": "-80,80-"}, "NUM_YCSB_RUNNERS": "1"},
 		{"cluster": {"VTGATE_COUNT": "1", "TABLETS_PER_SHARD": "1", "SHARDS": "-40,40-80,80-c0,c0-"}, "NUM_YCSB_RUNNERS": "1"},

@@ -14,8 +14,8 @@ fi
 
 GKE_ZONE=${GKE_ZONE:-'us-east1-a'} # zone for ycsb-runners, gke cluster
 BENCHMARKS_BASE_DIR=${BENCHMARKS_BASE_DIR:-~/ycsb_benchmarks} # where to save results
-CLUSTERS_CONFIG=${CLUSTERS_CONFIG:-'clusters.json'}
-WORKLOAD_CONFIG=${WORKLOAD_CONFIG:-'workloads.json'}
+CLUSTERS_CONFIG=${CLUSTERS_CONFIG:-'cluster-replicas.json'}
+WORKLOAD_CONFIG=${WORKLOAD_CONFIG:-'workloads-replicas.json'}
 YCSB_RUNNER_NAME=${YCSB_RUNNER_NAME:-'ycsb-runner'}
 SKIP_CLUSTER=${SKIP_CLUSTER:-'false'}
 
