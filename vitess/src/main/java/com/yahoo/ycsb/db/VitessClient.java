@@ -18,6 +18,7 @@ import com.youtube.vitess.vtgate.Row;
 import com.youtube.vitess.vtgate.Row.Cell;
 import com.youtube.vitess.vtgate.VtGate;
 import com.youtube.vitess.vtgate.cursor.Cursor;
+import com.youtube.vitess.vtgate.rpcclient.gorpc.BsonRpcClientFactory;
 
 import org.apache.commons.codec.digest.DigestUtils;
 
@@ -53,7 +54,7 @@ public class VitessClient extends DB {
     String dropTable = getProperties().getProperty("dropTable", DEFAULT_DROP_TABLE);
 
     try {
-      vtgate = VtGate.connect(hosts, timeoutMs);
+      vtgate = VtGate.connect(hosts, timeoutMs, new BsonRpcClientFactory());
       if (!"skip".equalsIgnoreCase(createTable)) {
         vtgate.begin();
         if (debugMode) {
@@ -235,7 +236,7 @@ public class VitessClient extends DB {
   }
 
   private UnsignedLong getKeyspaceId(String key) {
-    return UnsignedLong.asUnsigned(hash(DigestUtils.md5Hex(key)));
+    return UnsignedLong.fromLongBits(hash(DigestUtils.md5Hex(key)));
   }
 
   // based on String.hashCode() but returns long
