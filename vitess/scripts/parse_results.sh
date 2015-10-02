@@ -27,11 +27,11 @@ function print_cluster_metrics () {
   num_runners=`ls -d $cluster_results_dir/*/ | wc -l`
 
   timestamp=`basename $cluster_results_dir`
-  num_shards=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Shards/ {print $3}' | tr ',' ' ' | wc -w`
-  tablets_per_shard=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Tablets/ {print $5}'`
+  num_shards=`cat $cluster_results_dir/vitess-up.txt | awk '$2~/^Shards/ {print $3}' | tr ',' ' ' | wc -w`
+  tablets_per_shard=`cat $cluster_results_dir/vitess-up.txt | awk '$2~/^Tablets/ {print $5}'`
   machine_type=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Machine/ {print $4}'`
   ssd_size=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^SSD/ {print $4;exit;}'`
-  num_vtgates=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^VTGate/ {print $4}'`
+  num_vtgates=`cat $cluster_results_dir/vitess-up.txt | awk '$2~/^VTGate/ {print $4}'`
   num_nodes=`cat $cluster_results_dir/cluster-up.txt | awk '$2~/^Num/ {print $4;exit;}'`
 
   for runner in `ls -d $cluster_results_dir/*/`; do
