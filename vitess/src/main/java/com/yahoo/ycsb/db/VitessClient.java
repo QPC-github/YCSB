@@ -7,34 +7,48 @@ import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
-import com.youtube.vitess.vtgate.BindVariable;
-import com.youtube.vitess.vtgate.Exceptions.ConnectionException;
-import com.youtube.vitess.vtgate.Exceptions.IntegrityException;
-import com.youtube.vitess.vtgate.KeyRange;
-import com.youtube.vitess.vtgate.KeyspaceId;
-import com.youtube.vitess.vtgate.Query;
-import com.youtube.vitess.vtgate.Query.QueryBuilder;
-import com.youtube.vitess.vtgate.Row;
-import com.youtube.vitess.vtgate.Row.Cell;
-import com.youtube.vitess.vtgate.VtGate;
-import com.youtube.vitess.vtgate.cursor.Cursor;
-import com.youtube.vitess.vtgate.rpcclient.gorpc.BsonRpcClientFactory;
+
+import com.youtube.vitess.client.Context;
+import com.youtube.vitess.client.VTGateConn;
+import com.youtube.vitess.client.VTGateTx;
+import com.youtube.vitess.client.cursor.Cursor;
+import com.youtube.vitess.client.cursor.Row;
+import com.youtube.vitess.client.grpc.GrpcClientFactory;
+import com.youtube.vitess.proto.Query.Field;
+import com.youtube.vitess.proto.Topodata.TabletType;
+import com.youtube.vitess.proto.Vtrpc.CallerID;
 
 import org.apache.commons.codec.digest.DigestUtils;
+import org.joda.time.Duration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.util.List;
 import java.util.Set;
 import java.util.Vector;
 
 public class VitessClient extends DB {
-  private VtGate vtgate;
+  private Context ctx;
+  private VTGateConn vtgate;
+  private QueryCreator queryCreator;
+  private String vtgateAddress;
   private String keyspace;
-  private String tabletType;
+  private TabletType readTabletType;
+  private TabletType writeTabletType;
+  private String privateKeyField;
+  private boolean serverAutoCommitEnabled;
   private boolean debugMode;
 
-  private static final String PRIMARY_KEY_COL = "YCSB_KEY";
+  private static final CallerID CALLER_ID =
+      CallerID.newBuilder()
+          .setPrincipal("ycsb_principal")
+          .setComponent("ycsb_component")
+          .setSubcomponent("ycsb_subcomponent")
+          .build();
+
   private static final String DEFAULT_CREATE_TABLE =
       "CREATE TABLE usertable(YCSB_KEY VARCHAR (255) PRIMARY KEY, "
       + "field0 TEXT, field1 TEXT, field2 TEXT, field3 TEXT, field4 TEXT, "
@@ -44,63 +58,117 @@ public class VitessClient extends DB {
 
   @Override
   public void init() throws DBException {
-    String hosts = getProperties().getProperty("hosts");
-    int timeoutMs = Integer.parseInt(getProperties().getProperty("connectionTimeoutMs", "0"));
+    vtgateAddress = getProperties().getProperty("hosts", "");
+    String vtgateAddressSplit[] = vtgateAddress.split(":");
     keyspace = getProperties().getProperty("keyspace", "ycsb");
-    tabletType = getProperties().getProperty("tabletType", "master");
+    String shardingColumnName = getProperties().getProperty(
+        "vitess_sharding_column_name", "keyspace_id");
+    writeTabletType = TabletType.MASTER;
+    readTabletType = TabletType.REPLICA;
+    privateKeyField = getProperties().getProperty("vitess_primary_key_field", "YCSB_KEY");
     debugMode = getProperties().getProperty("debug") != null;
+    serverAutoCommitEnabled = Boolean.parseBoolean(getProperties().getProperty(
+        "server_autocommit_enabled", "false"));
+
+    ctx = Context.getDefault().withDeadlineAfter(Duration.millis(10000)).withCallerId(CALLER_ID);
+    queryCreator = new QueryCreator(shardingColumnName);
 
     String createTable = getProperties().getProperty("createTable", DEFAULT_CREATE_TABLE);
     String dropTable = getProperties().getProperty("dropTable", DEFAULT_DROP_TABLE);
 
+    if(Boolean.parseBoolean(getProperties().getProperty("doCreateTable", "false"))) {
+      String shards[] = getProperties().getProperty("shards", "0").split(",");
+      try {
+        vtgate = new VTGateConn((new GrpcClientFactory()).create(
+            ctx, new InetSocketAddress(vtgateAddressSplit[0],
+            Integer.parseInt(vtgateAddressSplit[1]))));
+        if (!"skip".equalsIgnoreCase(createTable)) {
+          VTGateTx tx = vtgate.begin(ctx);
+          if (debugMode) {
+            System.out.println(dropTable);
+          }
+          tx.executeShards(ctx, dropTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER, false);
+          if (debugMode) {
+            System.out.println(createTable);
+          }
+          tx.executeShards(ctx, createTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER, false);
+          tx.commit(ctx);
+        }
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  @Override
+  public int delete(String table, String key) {
+    QueryCreator.Query query =
+        queryCreator.createDeleteQuery(keyspace, writeTabletType, table, privateKeyField, key);
+
+    return applyMutation(query);
+  }
+
+  @Override
+  public int insert(String table, String key, HashMap<String, ByteIterator> result) {
+    QueryCreator.Query query = queryCreator.createInsertQuery(keyspace,
+        writeTabletType,
+        table,
+        privateKeyField,
+        key,
+        result);
+
+    System.out.println(query.getKeyspaceId());
+
+    return applyMutation(query);
+  }
+
+  /**
+   * @param query
+   * @return
+   */
+  private int applyMutation(QueryCreator.Query query) {
     try {
-      vtgate = VtGate.connect(hosts, timeoutMs, new BsonRpcClientFactory());
-      if (!"skip".equalsIgnoreCase(createTable)) {
-        vtgate.begin();
-        if (debugMode) {
-          System.out.println(dropTable);
-        }
-        vtgate.execute(
-            new QueryBuilder(dropTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
-        if (debugMode) {
-          System.out.println(createTable);
-        }
-        vtgate.execute(
-            new QueryBuilder(createTable, keyspace, "master").addKeyRange(KeyRange.ALL).build());
-        vtgate.commit();
+      if (serverAutoCommitEnabled) {
+        vtgate.executeKeyspaceIds(
+            ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
+            query.getBindVars(), query.getTabletType());
+      } else {
+        VTGateTx tx = vtgate.begin(ctx);
+        tx.executeKeyspaceIds(ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
+            query.getBindVars(), query.getTabletType(), false);
+        tx.commit(ctx);
       }
     } catch (Exception e) {
-      throw new DBException(e);
+      e.printStackTrace();
+      return 1;
     }
+    return 0;
   }
 
   @Override
   public int read(String table, String key, Set<String> fields,
       HashMap<String, ByteIterator> result) {
-    StringBuilder sql = new StringBuilder();
-    sql.append("select ");
-    if (fields == null || fields.isEmpty()) {
-      sql.append("*");
-    } else {
-      sql.append(Joiner.on(" ").join(fields));
-    }
-    sql.append(" from ");
-    sql.append(table);
-    sql.append(" where YCSB_KEY = :YCSB_KEY");
-    if (debugMode) {
-      System.out.println(sql);
-    }
-    Query query = new Query.QueryBuilder(sql.toString(), keyspace, tabletType)
-        .addKeyspaceId(KeyspaceId.valueOf(getKeyspaceId(key)))
-        .addBindVar(BindVariable.forString(PRIMARY_KEY_COL, key)).build();
+    QueryCreator.Query query = queryCreator.createSelectQuery(keyspace,
+        readTabletType,
+        table,
+        privateKeyField,
+        key,
+        fields);
     try {
-      Cursor cursor = vtgate.execute(query);
-      for (Row row : cursor) {
-        for (Cell cell : row) {
-          if (!cell.getName().equals(KeyspaceId.COL_NAME)) {
-            result.put(cell.getName(), new ByteArrayByteIterator(row.getBytes(cell.getName())));
-          }
+      Cursor cursor = vtgate.executeKeyspaceIds(
+          ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
+          query.getBindVars(), query.getTabletType());
+      if (cursor.getRowsAffected() != 1) {
+        return 1;
+      }
+      List<Field> cursorFields = cursor.getFields();
+      Row row = cursor.next();
+      for (int i = 0; i < cursorFields.size(); i++) {
+        byte[] value = row.getBytes(i);
+        if (value == null) {
+          value = new byte[] {};
         }
+        result.put(cursorFields.get(i).getName(), new ByteArrayByteIterator(value));
       }
     } catch (Exception e) {
       e.printStackTrace();
@@ -110,50 +178,33 @@ public class VitessClient extends DB {
   }
 
   @Override
-  public int scan(String table, String startkey, int recordcount, Set<String> fields,
+  public int scan(String table, String key, int num, Set<String> fields,
       Vector<HashMap<String, ByteIterator>> result) {
-    return 0;
-  }
-
-  @Override
-  public int update(String table, String key, HashMap<String, ByteIterator> values) {
-    List<String> colNames = new ArrayList<String>(values.keySet());
-    List<BindVariable> bindVars = new ArrayList<BindVariable>();
-    for (String colName : colNames) {
-      bindVars.add(BindVariable.forBytes(colName, values.get(colName).toArray()));
-    }
-    bindVars.add(BindVariable.forString(PRIMARY_KEY_COL, key));
-
-    StringBuilder sql = new StringBuilder();
-    sql.append("update ");
-    sql.append(table);
-    sql.append(" set ");
-
-    StringBuilder updateCols = null;
-    for (String colName : values.keySet()) {
-      if (updateCols == null) {
-        updateCols = new StringBuilder();
-      } else {
-        updateCols.append(", ");
+    QueryCreator.Query query = queryCreator.createSelectScanQuery(keyspace,
+        readTabletType,
+        table,
+        privateKeyField,
+        key,
+        fields,
+        num);
+    try {
+      Cursor cursor = vtgate.executeKeyspaceIds(
+          ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
+          query.getBindVars(), query.getTabletType());
+      Row row = cursor.next();
+      while (row != null) {
+        HashMap<String, ByteIterator> rowResult = new HashMap<>();
+        List<Field> cursorFields = cursor.getFields();
+        for (int i = 0; i < cursorFields.size(); i++) {
+          byte[] value = row.getBytes(i);
+          if (value == null) {
+            value = new byte[] {};
+          }
+          rowResult.put(cursorFields.get(i).getName(), new ByteArrayByteIterator(value));
+        }
+        result.add(rowResult);
+        row = cursor.next();
       }
-      updateCols.append(colName);
-      updateCols.append("=");
-      updateCols.append(":" + colName);
-    }
-    if (updateCols != null) {
-      sql.append(updateCols.toString());
-    }
-    sql.append(" where YCSB_KEY = ':YCSB_KEY'");
-
-    if (debugMode) {
-      System.out.println(sql);
-    }
-    Query query = new Query.QueryBuilder(sql.toString(), keyspace, "master")
-        .addKeyspaceId(KeyspaceId.valueOf(getKeyspaceId(key))).setBindVars(bindVars).build();
-    try {
-      vtgate.begin();
-      vtgate.execute(query);
-      vtgate.commit();
     } catch (Exception e) {
       e.printStackTrace();
       return 1;
@@ -162,90 +213,14 @@ public class VitessClient extends DB {
   }
 
   @Override
-  public int insert(String table, String key, HashMap<String, ByteIterator> values) {
-    List<String> colNames = new ArrayList<String>(values.keySet());
-    List<BindVariable> bindVars = new ArrayList<BindVariable>();
-    for (String colName : colNames) {
-      bindVars.add(BindVariable.forBytes(colName, values.get(colName).toArray()));
-    }
-    colNames.add(KeyspaceId.COL_NAME);
-    colNames.add(PRIMARY_KEY_COL);
+  public int update(String table, String key, HashMap<String, ByteIterator> result) {
+    QueryCreator.Query query = queryCreator.createUpdateQuery(keyspace,
+        writeTabletType,
+        table,
+        privateKeyField,
+        key,
+        result);
 
-    bindVars.add(BindVariable.forULong(KeyspaceId.COL_NAME, getKeyspaceId(key)));
-    bindVars.add(BindVariable.forString(PRIMARY_KEY_COL, key));
-
-    StringBuilder sql = new StringBuilder();
-    sql.append("insert into ");
-    sql.append(table);
-    sql.append(" (");
-    sql.append(Joiner.on(',').join(colNames));
-    sql.append(") values (:");
-    sql.append(Joiner.on(", :").join(colNames));
-    sql.append(" )");
-
-    if (debugMode) {
-      System.out.println(sql);
-    }
-
-    Query query = new Query.QueryBuilder(sql.toString(), keyspace, "master")
-        .addKeyspaceId(KeyspaceId.valueOf(getKeyspaceId(key))).setBindVars(bindVars).build();
-    try {
-      vtgate.begin();
-      vtgate.execute(query);
-      vtgate.commit();
-    } catch (IntegrityException e) {
-      // Just ignore integrity exceptions and move on
-      e.printStackTrace();
-    } catch (Exception e) {
-      e.printStackTrace();
-      return 1;
-    }
-    return 0;
-  }
-
-  @Override
-  public int delete(String table, String key) {
-    StringBuilder sql = new StringBuilder();
-    sql.append("delete from ");
-    sql.append(table);
-    sql.append(" where YCSB_KEY = :YCSB_KEY");
-    if (debugMode) {
-      System.out.println(sql);
-    }
-    Query query = new Query.QueryBuilder(sql.toString(), keyspace, "master")
-        .addKeyspaceId(KeyspaceId.valueOf(getKeyspaceId(key)))
-        .addBindVar(BindVariable.forString(PRIMARY_KEY_COL, key)).build();
-    try {
-      vtgate.begin();
-      vtgate.execute(query);
-      vtgate.commit();
-    } catch (Exception e) {
-      e.printStackTrace();
-      return 1;
-    }
-    return 0;
-  }
-
-  @Override
-  public void cleanup() throws DBException {
-    try {
-      vtgate.close();
-    } catch (ConnectionException e) {
-      throw new DBException(e);
-    }
-  }
-
-  private UnsignedLong getKeyspaceId(String key) {
-    return UnsignedLong.fromLongBits(hash(DigestUtils.md5Hex(key)));
-  }
-
-  // based on String.hashCode() but returns long
-  private static long hash(String string) {
-    long h = 1125899906842597L;
-    int len = string.length();
-    for (int i = 0; i < len; i++) {
-      h = 31 * h + string.charAt(i);
-    }
-    return h;
+    return applyMutation(query);
   }
 }
