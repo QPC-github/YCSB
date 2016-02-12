@@ -87,11 +87,11 @@ public class VitessClient extends DB {
           if (debugMode) {
             System.out.println(dropTable);
           }
-          tx.executeShards(ctx, dropTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER, false);
+          tx.executeShards(ctx, dropTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER);
           if (debugMode) {
             System.out.println(createTable);
           }
-          tx.executeShards(ctx, createTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER, false);
+          tx.executeShards(ctx, createTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER);
           tx.commit(ctx);
         }
       } catch (Exception e) {
@@ -135,7 +135,7 @@ public class VitessClient extends DB {
       } else {
         VTGateTx tx = vtgate.begin(ctx);
         tx.executeKeyspaceIds(ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
-            query.getBindVars(), query.getTabletType(), false);
+            query.getBindVars(), query.getTabletType());
         tx.commit(ctx);
       }
     } catch (Exception e) {
