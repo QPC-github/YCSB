@@ -34,9 +34,9 @@ public class QueryCreator {
       this.keyspace = keyspace;
       this.tabletType = tabletType;
       this.bindVars = new HashMap<String, Object>();
-      long keyspaceId = Hashing.murmur3_128().hashUnencodedChars(key).asLong();
-      this.keyspaceId = Arrays.asList(Longs.toByteArray(keyspaceId));
-      addBindVar(QueryCreator.shardingColumnName, UnsignedLong.fromLongBits(keyspaceId));
+      long hashedKeyspaceId = Hashing.murmur3_128().hashUnencodedChars(key).asLong();
+      this.keyspaceId = Arrays.asList(Longs.toByteArray(hashedKeyspaceId));
+      addBindVar(QueryCreator.shardingColumnName, UnsignedLong.fromLongBits(hashedKeyspaceId));
     }
 
     public void addBindVar(String key, Object value) {

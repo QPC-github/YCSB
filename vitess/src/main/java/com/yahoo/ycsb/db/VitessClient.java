@@ -1,12 +1,10 @@
 package com.yahoo.ycsb.db;
 
-import com.google.common.base.Joiner;
-import com.google.common.primitives.UnsignedLong;
-
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
+import com.yahoo.ycsb.Status;
 
 import com.youtube.vitess.client.Context;
 import com.youtube.vitess.client.VTGateConn;
@@ -18,18 +16,18 @@ import com.youtube.vitess.proto.Query.Field;
 import com.youtube.vitess.proto.Topodata.TabletType;
 import com.youtube.vitess.proto.Vtrpc.CallerID;
 
-import org.apache.commons.codec.digest.DigestUtils;
 import org.joda.time.Duration;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.net.InetSocketAddress;
-import java.net.InetAddress;
 import java.util.List;
 import java.util.Set;
 import java.util.Vector;
 
+/**
+ * Vitess client for YCSB framework.
+ */
 public class VitessClient extends DB {
   private Context ctx;
   private VTGateConn vtgate;
@@ -59,7 +57,7 @@ public class VitessClient extends DB {
   @Override
   public void init() throws DBException {
     vtgateAddress = getProperties().getProperty("hosts", "");
-    String vtgateAddressSplit[] = vtgateAddress.split(":");
+    String[] vtgateAddressSplit = vtgateAddress.split(":");
     keyspace = getProperties().getProperty("keyspace", "ycsb");
     String shardingColumnName = getProperties().getProperty(
         "vitess_sharding_column_name", "keyspace_id");
@@ -77,22 +75,26 @@ public class VitessClient extends DB {
     String dropTable = getProperties().getProperty("dropTable", DEFAULT_DROP_TABLE);
 
     if(Boolean.parseBoolean(getProperties().getProperty("doCreateTable", "false"))) {
-      String shards[] = getProperties().getProperty("shards", "0").split(",");
+      String[] shards = getProperties().getProperty("shards", "0").split(",");
       try {
         vtgate = new VTGateConn((new GrpcClientFactory()).create(
             ctx, new InetSocketAddress(vtgateAddressSplit[0],
             Integer.parseInt(vtgateAddressSplit[1]))));
         if (!"skip".equalsIgnoreCase(createTable)) {
-          VTGateTx tx = vtgate.begin(ctx);
+          VTGateTx tx = vtgate.begin(ctx).checkedGet();
           if (debugMode) {
             System.out.println(dropTable);
           }
-          tx.executeShards(ctx, dropTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER);
+          tx.executeShards(
+              ctx, dropTable, keyspace, Arrays.asList(shards),
+              new HashMap<String, String>(), TabletType.MASTER).checkedGet();
           if (debugMode) {
             System.out.println(createTable);
           }
-          tx.executeShards(ctx, createTable, keyspace, Arrays.asList(shards), new HashMap<String, String>(), TabletType.MASTER);
-          tx.commit(ctx);
+          tx.executeShards(
+              ctx, createTable, keyspace, Arrays.asList(shards),
+              new HashMap<String, String>(), TabletType.MASTER).checkedGet();
+          tx.commit(ctx).checkedGet();
         }
       } catch (Exception e) {
         e.printStackTrace();
@@ -101,7 +103,7 @@ public class VitessClient extends DB {
   }
 
   @Override
-  public int delete(String table, String key) {
+  public Status delete(String table, String key) {
     QueryCreator.Query query =
         queryCreator.createDeleteQuery(keyspace, writeTabletType, table, privateKeyField, key);
 
@@ -109,7 +111,7 @@ public class VitessClient extends DB {
   }
 
   @Override
-  public int insert(String table, String key, HashMap<String, ByteIterator> result) {
+  public Status insert(String table, String key, HashMap<String, ByteIterator> result) {
     QueryCreator.Query query = queryCreator.createInsertQuery(keyspace,
         writeTabletType,
         table,
@@ -126,27 +128,28 @@ public class VitessClient extends DB {
    * @param query
    * @return
    */
-  private int applyMutation(QueryCreator.Query query) {
+  private Status applyMutation(QueryCreator.Query query) {
     try {
       if (serverAutoCommitEnabled) {
         vtgate.executeKeyspaceIds(
             ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
-            query.getBindVars(), query.getTabletType());
+            query.getBindVars(), query.getTabletType()).checkedGet();
       } else {
-        VTGateTx tx = vtgate.begin(ctx);
-        tx.executeKeyspaceIds(ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
-            query.getBindVars(), query.getTabletType());
+        VTGateTx tx = vtgate.begin(ctx).checkedGet();
+        tx.executeKeyspaceIds(
+            ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
+            query.getBindVars(), query.getTabletType()).checkedGet();
         tx.commit(ctx);
       }
     } catch (Exception e) {
       e.printStackTrace();
-      return 1;
+      return new Status("ERROR", e.getMessage());
     }
-    return 0;
+    return Status.OK;
   }
 
   @Override
-  public int read(String table, String key, Set<String> fields,
+  public Status read(String table, String key, Set<String> fields,
       HashMap<String, ByteIterator> result) {
     QueryCreator.Query query = queryCreator.createSelectQuery(keyspace,
         readTabletType,
@@ -157,9 +160,9 @@ public class VitessClient extends DB {
     try {
       Cursor cursor = vtgate.executeKeyspaceIds(
           ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
-          query.getBindVars(), query.getTabletType());
+          query.getBindVars(), query.getTabletType()).checkedGet();
       if (cursor.getRowsAffected() != 1) {
-        return 1;
+        return new Status("ERROR", "No rows returned");
       }
       List<Field> cursorFields = cursor.getFields();
       Row row = cursor.next();
@@ -172,13 +175,13 @@ public class VitessClient extends DB {
       }
     } catch (Exception e) {
       e.printStackTrace();
-      return 1;
+      return new Status("ERROR", e.getMessage());
     }
-    return 0;
+    return Status.OK;
   }
 
   @Override
-  public int scan(String table, String key, int num, Set<String> fields,
+  public Status scan(String table, String key, int num, Set<String> fields,
       Vector<HashMap<String, ByteIterator>> result) {
     QueryCreator.Query query = queryCreator.createSelectScanQuery(keyspace,
         readTabletType,
@@ -190,7 +193,7 @@ public class VitessClient extends DB {
     try {
       Cursor cursor = vtgate.executeKeyspaceIds(
           ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
-          query.getBindVars(), query.getTabletType());
+          query.getBindVars(), query.getTabletType()).checkedGet();
       Row row = cursor.next();
       while (row != null) {
         HashMap<String, ByteIterator> rowResult = new HashMap<>();
@@ -207,13 +210,13 @@ public class VitessClient extends DB {
       }
     } catch (Exception e) {
       e.printStackTrace();
-      return 1;
+      return new Status("ERROR", e.getMessage());
     }
-    return 0;
+    return Status.OK;
   }
 
   @Override
-  public int update(String table, String key, HashMap<String, ByteIterator> result) {
+  public Status update(String table, String key, HashMap<String, ByteIterator> result) {
     QueryCreator.Query query = queryCreator.createUpdateQuery(keyspace,
         writeTabletType,
         table,
