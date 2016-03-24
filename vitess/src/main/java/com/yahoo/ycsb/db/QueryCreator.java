@@ -29,13 +29,16 @@ public class QueryCreator {
     private Map<String, Object> bindVars;
 
     public Query(String query, String keyspace, TabletType tabletType,
-                 String key) {
+                 String key, String keyField) {
       this.query = query;
       this.keyspace = keyspace;
       this.tabletType = tabletType;
       this.bindVars = new HashMap<String, Object>();
       long hashedKeyspaceId = Hashing.murmur3_128().hashUnencodedChars(key).asLong();
       this.keyspaceId = Arrays.asList(Longs.toByteArray(hashedKeyspaceId));
+      // YCSB keys are user#######, if using a numeric pk, trim first 4 chars
+      Object bindKey = QueryCreator.keyIsString ? key : new Long(key.substring(4));
+      addBindVar(keyField, bindKey);
       addBindVar(QueryCreator.shardingColumnName, UnsignedLong.fromLongBits(hashedKeyspaceId));
     }
 
@@ -65,9 +68,11 @@ public class QueryCreator {
   }
 
   private static String shardingColumnName;
+  private static boolean keyIsString;
 
-  public QueryCreator(String shardingColumnName) {
+  public QueryCreator(String shardingColumnName, boolean keyIsString) {
     QueryCreator.shardingColumnName = shardingColumnName;
+    QueryCreator.keyIsString = keyIsString;
   }
 
   public Query createInsertQuery(String keyspace,
@@ -96,11 +101,11 @@ public class QueryCreator {
     }
     sqlBuilder.append(")");
 
-    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key);
-
-    query.addBindVar(keyField, key);
+    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
     for (Entry<String, ByteIterator> val : result.entrySet()) {
-      query.addBindVar(val.getKey(), val.getValue().toString());
+      if (val.getKey() != keyField) {
+        query.addBindVar(val.getKey(), val.getValue().toString());
+      }
     }
 
     return query;
@@ -132,9 +137,7 @@ public class QueryCreator {
     sqlBuilder.append(" = :");
     sqlBuilder.append(keyField);
 
-    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key);
-    query.addBindVar(keyField, key);
-    return query;
+    return new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
   }
 
   public Query createSelectScanQuery(String keyspace,
@@ -166,9 +169,7 @@ public class QueryCreator {
     sqlBuilder.append(" limit ");
     sqlBuilder.append(rowCount);
 
-    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key);
-    query.addBindVar(keyField, key);
-    return query;
+    return new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
   }
 
   public Query createUpdateQuery(String keyspace,
@@ -198,9 +199,7 @@ public class QueryCreator {
     sqlBuilder.append(" = :");
     sqlBuilder.append(keyField);
 
-    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key);
-
-    query.addBindVar(keyField, key);
+    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
     for (Entry<String, ByteIterator> val : result.entrySet()) {
       query.addBindVar(val.getKey(), val.getValue().toString());
     }
@@ -219,11 +218,7 @@ public class QueryCreator {
     sqlBuilder.append(" = :");
     sqlBuilder.append(keyField);
 
-    Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key);
-
-    query.addBindVar(keyField, key);
-
-    return query;
+    return new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
   }
 
 }

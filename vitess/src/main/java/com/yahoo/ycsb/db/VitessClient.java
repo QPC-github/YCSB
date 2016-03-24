@@ -48,10 +48,10 @@ public class VitessClient extends DB {
           .build();
 
   private static final String DEFAULT_CREATE_TABLE =
-      "CREATE TABLE usertable(YCSB_KEY VARCHAR (255) PRIMARY KEY, "
+      "CREATE TABLE usertable(YCSB_KEY BIGINT(20) UNSIGNED PRIMARY KEY, "
       + "field0 TEXT, field1 TEXT, field2 TEXT, field3 TEXT, field4 TEXT, "
-      + "field5 TEXT, field6 TEXT, field7 TEXT, field8 TEXT, field9 TEXT, "
-      + "keyspace_id BIGINT unsigned NOT NULL) Engine=InnoDB";
+      + "field5 TEXT, field6 TEXT, field7 TEXT, field8 TEXT, field9 TEXT"
+      + ") Engine=InnoDB";
   private static final String DEFAULT_DROP_TABLE = "drop table if exists usertable";
 
   @Override
@@ -61,6 +61,8 @@ public class VitessClient extends DB {
     keyspace = getProperties().getProperty("keyspace", "ycsb");
     String shardingColumnName = getProperties().getProperty(
         "vitess_sharding_column_name", "keyspace_id");
+    boolean keyIsString = Boolean.parseBoolean(getProperties().getProperty(
+        "vitess_key_is_string", "true"));
     writeTabletType = TabletType.MASTER;
     readTabletType = TabletType.REPLICA;
     privateKeyField = getProperties().getProperty("vitess_primary_key_field", "YCSB_KEY");
@@ -69,18 +71,18 @@ public class VitessClient extends DB {
         "server_autocommit_enabled", "false"));
 
     ctx = Context.getDefault().withDeadlineAfter(Duration.millis(10000)).withCallerId(CALLER_ID);
-    queryCreator = new QueryCreator(shardingColumnName);
+    queryCreator = new QueryCreator(shardingColumnName, keyIsString);
 
     String createTable = getProperties().getProperty("createTable", DEFAULT_CREATE_TABLE);
     String dropTable = getProperties().getProperty("dropTable", DEFAULT_DROP_TABLE);
+    vtgate = new VTGateConn((new GrpcClientFactory()).create(
+        ctx, new InetSocketAddress(vtgateAddressSplit[0],
+        Integer.parseInt(vtgateAddressSplit[1]))));
 
     if(Boolean.parseBoolean(getProperties().getProperty("doCreateTable", "false"))) {
       String[] shards = getProperties().getProperty("shards", "0").split(",");
-      try {
-        vtgate = new VTGateConn((new GrpcClientFactory()).create(
-            ctx, new InetSocketAddress(vtgateAddressSplit[0],
-            Integer.parseInt(vtgateAddressSplit[1]))));
-        if (!"skip".equalsIgnoreCase(createTable)) {
+      if (!"skip".equalsIgnoreCase(createTable)) {
+        try {
           VTGateTx tx = vtgate.begin(ctx).checkedGet();
           if (debugMode) {
             System.out.println(dropTable);
@@ -95,9 +97,9 @@ public class VitessClient extends DB {
               ctx, createTable, keyspace, Arrays.asList(shards),
               new HashMap<String, String>(), TabletType.MASTER).checkedGet();
           tx.commit(ctx).checkedGet();
+        } catch (Exception e) {
+          e.printStackTrace();
         }
-      } catch (Exception e) {
-        e.printStackTrace();
       }
     }
   }
@@ -118,8 +120,6 @@ public class VitessClient extends DB {
         privateKeyField,
         key,
         result);
-
-    System.out.println(query.getKeyspaceId());
 
     return applyMutation(query);
   }
