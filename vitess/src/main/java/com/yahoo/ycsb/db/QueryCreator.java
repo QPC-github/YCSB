@@ -201,7 +201,9 @@ public class QueryCreator {
 
     Query query = new Query(sqlBuilder.toString(), keyspace, tabletType, key, keyField);
     for (Entry<String, ByteIterator> val : result.entrySet()) {
-      query.addBindVar(val.getKey(), val.getValue().toString());
+      if (val.getKey() != keyField) {
+        query.addBindVar(val.getKey(), val.getValue().toString());
+      }
     }
 
     return query;
