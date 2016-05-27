@@ -139,7 +139,7 @@ public class VitessClient extends DB {
         tx.executeKeyspaceIds(
             ctx, query.getQuery(), query.getKeyspace(), query.getKeyspaceId(),
             query.getBindVars(), query.getTabletType()).checkedGet();
-        tx.commit(ctx);
+        tx.commit(ctx).checkedGet();
       }
     } catch (Exception e) {
       e.printStackTrace();
